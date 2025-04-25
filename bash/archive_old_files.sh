@@ -1,36 +1,45 @@
 #!/bin/bash
 
-# Define source and archive directories
+# Configuration
 SLIDES_SRC="/mnt/datastore/test-data/images/slides"
 SLIDES_ARCHIVE="/mnt/datastore/test-data/images/archive"
-
 MARKUP_SRC="/mnt/datastore/test-data/images/markup"
 MARKUP_ARCHIVE="/mnt/datastore/test-data/markup/archive"
 
-# Log directory and filename (date-stamped)
+# Logging setup
 LOG_DIR="/var/log/archive_script"
 LOG_FILE="$LOG_DIR/archive_script-$(date +\%Y-\%m-\%d).log"
-
-# Create log and archive directories if they don't exist
 mkdir -p "$LOG_DIR" "$SLIDES_ARCHIVE" "$MARKUP_ARCHIVE"
 
-# Log function (appends source → destination moves with timestamps)
-log_move() {
-    echo "[$(date +\%Y-\%m-\%d_\%H:\%M:\%S)] Moved: $1 → $2" >> "$LOG_FILE"
+# Log function (records moves with timestamps)
+log_action() {
+  echo "[$(date +\%Y-\%m-\%d_\%H:\%M:\%S)] $1" >> "$LOG_FILE"
 }
 
-# Move folders older than 1 minute (for testing) and log each move
-find "$SLIDES_SRC" -mindepth 1 -type d -mmin +1 -print0 | while IFS= read -r -d '' folder; do
-    dest="$SLIDES_ARCHIVE/$(basename "$folder")"
-    mv -v "$folder" "$dest"
-    log_move "$folder" "$dest"
+# Move OLD FOLDERS (depth=1 to avoid nested subfolders)
+find "$SLIDES_SRC" -mindepth 1 -maxdepth 1 -type d -mmin +1 | while read -r folder; do
+  dest="$SLIDES_ARCHIVE/$(basename "$folder")"
+  mv -v "$folder" "$dest"
+  log_action "MOVED FOLDER: $folder → $dest"
 done
 
-find "$MARKUP_SRC" -mindepth 1 -type d -mmin +1 -print0 | while IFS= read -r -d '' folder; do
-    dest="$MARKUP_ARCHIVE/$(basename "$folder")"
-    mv -v "$folder" "$dest"
-    log_move "$folder" "$dest"
+find "$MARKUP_SRC" -mindepth 1 -maxdepth 1 -type d -mmin +1 | while read -r folder; do
+  dest="$MARKUP_ARCHIVE/$(basename "$folder")"
+  mv -v "$folder" "$dest"
+  log_action "MOVED FOLDER: $folder → $dest"
 done
 
-# Final log entry
-echo "[$(date +\%Y-\%m-\%d_\%H:\%M:\%S)] Archive job completed." >> "$LOG_FILE"
+# Move LOOSE FILES (excluding files in subfolders)
+find "$SLIDES_SRC" -mindepth 1 -maxdepth 1 -type f -mmin +1 | while read -r file; do
+  dest="$SLIDES_ARCHIVE/"
+  mv -v "$file" "$dest"
+  log_action "MOVED FILE: $file → $dest$(basename "$file")"
+done
+
+find "$MARKUP_SRC" -mindepth 1 -maxdepth 1 -type f -mmin +1 | while read -r file; do
+  dest="$MARKUP_ARCHIVE/"
+  mv -v "$file" "$dest"
+  log_action "MOVED FILE: $file → $dest$(basename "$file")"
+done
+
+log_action "Archive job completed."

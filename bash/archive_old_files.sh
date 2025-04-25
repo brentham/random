@@ -7,14 +7,30 @@ SLIDES_ARCHIVE="/mnt/datastore/test-data/images/archive"
 MARKUP_SRC="/mnt/datastore/test-data/images/markup"
 MARKUP_ARCHIVE="/mnt/datastore/test-data/markup/archive"
 
-# Create archive directories if they don't exist
-mkdir -p "$SLIDES_ARCHIVE" "$MARKUP_ARCHIVE"
+# Log directory and filename (date-stamped)
+LOG_DIR="/var/log/archive_script"
+LOG_FILE="$LOG_DIR/archive_script-$(date +\%Y-\%m-\%d).log"
 
-# Move files older than 60 days from SLIDES_SRC to SLIDES_ARCHIVE
-find "$SLIDES_SRC" -type f -mtime +60 -exec mv -v {} "$SLIDES_ARCHIVE" \;
+# Create log and archive directories if they don't exist
+mkdir -p "$LOG_DIR" "$SLIDES_ARCHIVE" "$MARKUP_ARCHIVE"
 
-# Move files older than 60 days from MARKUP_SRC to MARKUP_ARCHIVE
-find "$MARKUP_SRC" -type f -mtime +60 -exec mv -v {} "$MARKUP_ARCHIVE" \;
+# Log function (appends source → destination moves with timestamps)
+log_move() {
+    echo "[$(date +\%Y-\%m-\%d_\%H:\%M:\%S)] Moved: $1 → $2" >> "$LOG_FILE"
+}
 
-# Optional: Log the operation
-echo "[$(date)] Files older than 60 days moved to archive." >> /var/log/archive_script.log
+# Move folders older than 1 minute (for testing) and log each move
+find "$SLIDES_SRC" -mindepth 1 -type d -mmin +1 -print0 | while IFS= read -r -d '' folder; do
+    dest="$SLIDES_ARCHIVE/$(basename "$folder")"
+    mv -v "$folder" "$dest"
+    log_move "$folder" "$dest"
+done
+
+find "$MARKUP_SRC" -mindepth 1 -type d -mmin +1 -print0 | while IFS= read -r -d '' folder; do
+    dest="$MARKUP_ARCHIVE/$(basename "$folder")"
+    mv -v "$folder" "$dest"
+    log_move "$folder" "$dest"
+done
+
+# Final log entry
+echo "[$(date +\%Y-\%m-\%d_\%H:\%M:\%S)] Archive job completed." >> "$LOG_FILE"

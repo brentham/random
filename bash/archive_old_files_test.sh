@@ -43,14 +43,9 @@ mkdir -p "$LOG_DIR" "$SLIDES_ARCHIVE" "$MARKUP_ARCHIVE"
 #   log_action "MOVED FILE: $file → $dest$(basename "$file")"
 # done
 
-# log_action "Archive job completed."
-
-
-
-
 #!/bin/bash
 
-# Configuration
+# # Configuration
 # SLIDES_SRC="/mnt/datastore/test-data/images/slides"
 # SLIDES_ARCHIVE="/mnt/datastore/test-data/images/archive"
 # MARKUP_SRC="/mnt/datastore/test-data/images/markup"
@@ -66,7 +61,7 @@ log_action() {
   echo "[$(date +\%Y-\%m-\%d_\%H:\%M:\%S)] $1" >> "$LOG_FILE"
 }
 
-# Safe move function (merges folders, overwrites files)
+# Safe move/merge function with source cleanup
 safe_move() {
   local src="$1"
   local dest_dir="$2"
@@ -75,22 +70,24 @@ safe_move() {
 
   if [[ -d "$src" ]]; then
     if [[ -e "$dest" ]]; then
-      # Merge folders (skip existing files, log conflicts)
-      rsync -a --ignore-existing "$src/" "$dest/"
-      log_action "MERGED FOLDER: $src → $dest (merged contents)"
+      # Merge folders, delete source files after transfer
+      rsync -a --remove-source-files --ignore-existing "$src/" "$dest/"
+      # Delete empty source folder
+      rmdir "$src" 2>/dev/null && log_action "DELETED EMPTY FOLDER: $src"
+      log_action "MERGED FOLDER: $src → $dest (deleted source after transfer)"
     else
-      # Move new folder
+      # Move new folder (standard mv)
       mv -v "$src" "$dest_dir"
       log_action "MOVED FOLDER: $src → $dest"
     fi
   else
-    # Overwrite files
+    # Overwrite files and delete source
     mv -vf "$src" "$dest_dir"
-    log_action "MOVED FILE: $src → $dest_dir/$name"
+    log_action "MOVED FILE: $src → $dest_dir/$name (deleted source)"
   fi
 }
 
-# Move OLD FOLDERS (depth=1)
+# Move OLD ITEMS (folders/files, depth=1)
 find "$SLIDES_SRC" -mindepth 1 -maxdepth 1 -mmin +1 | while read -r item; do
   safe_move "$item" "$SLIDES_ARCHIVE"
 done
@@ -99,4 +96,4 @@ find "$MARKUP_SRC" -mindepth 1 -maxdepth 1 -mmin +1 | while read -r item; do
   safe_move "$item" "$MARKUP_ARCHIVE"
 done
 
-log_action "Archive job completed."
+log_action "Archive job completed. Source files cleaned."

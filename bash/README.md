@@ -47,13 +47,26 @@ Create test folders (with files inside):
 bash
 mkdir -p ./images/slides/folder_{1..3}
 mkdir -p ./images/markup/folder_{1..3}
-touch ./images/slides/folder_{1..3}/testfile.txt
-touch ./images/markup/folder_{1..3}/testfile.txt
 
 touch -t $(date -d "2 minutes ago" +%Y%m%d%H%M.%S) ./images/slides/folder_{1..3}/old_file.jpg
 touch -t $(date -d "2 minutes ago" +%Y%m%d%H%M.%S) ./images/markup/folder_{1..3}/old_file.jpg
 
-touch ./images/slides/testfile_{1..5}.jpg
-touch ./images/markup/testfile_{1..5}.txt
+touch -t $(date -d "2 minutes ago" +%Y%m%d%H%M.%S)  ./images/slides/testfile_{1..5}.jpg
+touch -t $(date -d "2 minutes ago" +%Y%m%d%H%M.%S)  ./images/markup/testfile_{1..5}.txt
 
 ./archive_old_files_test.sh
+
+
+
+
+
+
+
+
+
+
+
+
+
+touch ./images/slides/folder_{1..3}/testfile.txt
+touch ./images/markup/folder_{1..3}/testfile.txt

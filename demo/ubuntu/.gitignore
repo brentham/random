@@ -1,0 +1,3 @@
+vsphere.pkrvars.hcl
+packer_cache
+variables-secrets.json

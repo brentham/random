@@ -1,0 +1,31 @@
+---
+- name: Join Ubuntu server to AD domain
+  hosts: all
+  become: yes
+  vars:
+    domain: GHDNA.IO
+    domain_lower: ghdna.io
+    ad_servers: "ad-sql-01.ghdna.io,ad-sql-02.ghdna.io"
+    ad_backup_servers: "ad-rwc-01.ghdna.io"
+    ad_site: "gh-amer-west"
+    ad_user: "{{ ad_join_user }}"
+    ad_users_group: "{{ your_ad_users_group }}"
+    ad_admins_group: "{{ your_ad_admins_group }}"
+  
+  tasks:
+    # [Previous tasks remain the same until Step 4]
+    
+    # Step 4: Setup SSSD Service (using template)
+    - name: Configure SSSD using template
+      template:
+        src: sssd.conf.j2
+        dest: /etc/sssd/sssd.conf
+        owner: root
+        group: root
+        mode: 0600
+    
+    - name: Restart SSSD service
+      service:
+        name: sssd
+        state: restarted
+    

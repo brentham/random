@@ -1,0 +1,139 @@
+---
+- name: Join Ubuntu server to AD domain
+  hosts: all
+  become: yes
+  vars:
+    domain: GHDNA.IO
+    domain_lower: ghdna.io
+    ad_servers: "ad-sql-01.ghdna.io,ad-sql-02.ghdna.io"
+    ad_backup_servers: "ad-rwc-01.ghdna.io"
+    ad_site: "gh-amer-west"
+    ad_user: "{{ ad_join_user }}"
+    ad_users_group: "{{ your_ad_users_group }}"
+    ad_admins_group: "{{ your_ad_admins_group }}"
+  
+  tasks:
+    # Step 1: Install Pre-Reqs
+    - name: Update apt repositories
+      apt:
+        update_cache: yes
+    
+    - name: Install required packages
+      apt:
+        name:
+          - sssd
+          - krb5-config
+          - krb5-user
+          - realmd
+          - adcli
+        state: present
+
+    # Step 2: Setup Kerberos
+    - name: Configure krb5.conf
+      blockinfile:
+        path: /etc/krb5.conf
+        block: |
+          [libdefaults]
+            default_realm = {{ domain }}
+          [realms]
+            {{ domain }} = {
+              kdc = {{ domain_lower }}
+              admin_server = {{ domain_lower }}
+            }
+          [domain_realm]
+            .{{ domain_lower }} = {{ domain }}
+            {{ domain_lower }} = {{ domain }}
+        marker: "# {mark} ANSIBLE MANAGED BLOCK - KRB5 Config"
+
+    # Step 3: Join VM to AD
+    - name: Authenticate to AD with kinit
+      command: "kinit -V {{ ad_user }}@{{ domain }}"
+      no_log: true  # Don't log credentials
+      register: kinit_result
+      changed_when: "'validating' in kinit_result.stderr"
+      failed_when: 
+        - "'validating' not in kinit_result.stderr"
+        - "'Password incorrect' not in kinit_result.stderr"
+      retries: 3
+      delay: 5
+      when: ad_user is defined
+
+    - name: Join the domain
+      command: "realm join --verbose {{ domain }} -U '{{ ad_user }}@{{ domain }}' --install=/"
+      no_log: true  # Don't log credentials
+      when: ad_user is defined
+
+    # Step 4: Setup SSSD Service
+    - name: Configure SSSD
+      blockinfile:
+        path: /etc/sssd/sssd.conf
+        create: yes
+        owner: root
+        group: root
+        mode: 0600
+        block: |
+          [sssd]
+          domains = {{ domain_lower }}
+          config_file_version = 2
+          services = nss, pam
+
+          [domain/{{ domain_lower }}]
+          ad_domain = {{ domain_lower }}
+          ad_site = {{ ad_site }}
+          krb5_realm = {{ domain }}
+          realmd_tags = manages-system joined-with-adcli
+          cache_credentials = True
+          id_provider = ad
+          krb5_store_password_if_offline = True
+          default_shell = /bin/bash
+          ldap_id_mapping = True
+          use_fully_qualified_names = False
+          fallback_homedir = /home/%u
+          simple_allow_users
+          access_provider = simple
+          ad_server = {{ ad_servers }}
+          ad_backup_server = {{ ad_backup_servers }}
+          simple_allow_groups = domain admins, {{ ad_users_group }}, {{ ad_admins_group }}
+          ldap_rfc2307_fallback_to_local_users = True
+        marker: "# {mark} ANSIBLE MANAGED BLOCK - SSSD Config"
+
+    - name: Restart SSSD service
+      service:
+        name: sssd
+        state: restarted
+
+    # Step 5: Setup SSHd Service
+    - name: Enable PasswordAuthentication in sshd_config
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        line: "PasswordAuthentication yes"
+        state: present
+        validate: '/usr/sbin/sshd -t -f %s'
+
+    - name: Restart SSH service
+      service:
+        name: ssh
+        state: restarted
+
+    # Step 6: Configure PAM
+    - name: Configure PAM to create home directories
+      lineinfile:
+        path: /etc/pam.d/common-session
+        line: "session required pam_mkhomedir.so skel=/etc/skel/ umask=0077"
+        insertafter: 'session optional pam_sss.so'
+        state: present
+
+    # Step 7: Grant SUDO Access
+    - name: Configure sudoers for Domain Admins
+      lineinfile:
+        path: /etc/sudoers
+        line: "%Domain\\ Admins ALL=(ALL) NOPASSWD:ALL"
+        validate: 'visudo -cf %s'
+        state: present
+
+    - name: Configure sudoers for custom admin group
+      lineinfile:
+        path: /etc/sudoers
+        line: "%{{ ad_admins_group }} ALL=(ALL) NOPASSWD:ALL"
+        validate: 'visudo -cf %s'
+        state: present

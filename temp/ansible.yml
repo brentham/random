@@ -45,6 +45,13 @@
             {{ domain_lower }} = {{ domain }}
         marker: "# {mark} ANSIBLE MANAGED BLOCK - KRB5 Config"
 
+    - name: Update default_realm in krb5.conf
+      replace:
+        path: /etc/krb5.conf
+        regexp: '^\s*default_realm\s*=\s*ATHENA\.MIT\.EDU'
+        replace: '  default_realm = {{ domain }}'
+        backup: yes
+
     # Step 3: Join VM to AD
     - name: Authenticate to AD with kinit
       command: "kinit -V {{ ad_user }}@{{ domain }}"

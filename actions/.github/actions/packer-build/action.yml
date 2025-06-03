@@ -1,0 +1,41 @@
+name: 'Packer Build'
+description: 'Execute Packer build'
+inputs:
+  build_dir:
+    description: 'Directory containing packer files'
+    required: true
+runs:
+  using: 'composite'
+  steps:
+    - name: Install Packer
+      shell: sh
+      run: |
+        apk update
+        apk add packer xorriso mtools dosfstools
+
+    - name: Download vsphere.pkrvars.hcl
+      uses: actions/download-artifact@v4
+      with:
+        name: vsphere-pkrvars
+        path: ${{ inputs.build_dir }}
+
+    - name: Verify files
+      shell: sh
+      working-directory: ${{ inputs.build_dir }}
+      run: |
+        echo "Files in build directory:"
+        ls -la
+        echo "vsphere.pkrvars.hcl contents:"
+        cat vsphere.pkrvars.hcl
+
+    - name: Initialize Packer
+      shell: sh
+      working-directory: ${{ inputs.build_dir }}
+      run: |
+        packer init .
+
+    - name: Build image
+      shell: sh
+      working-directory: ${{ inputs.build_dir }}
+      run: |
+        packer build -force -on-error=abort -var-file=variables.pkrvars.hcl -var-file=vsphere.pkrvars.hcl .

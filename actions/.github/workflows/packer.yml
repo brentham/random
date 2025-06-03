@@ -1,0 +1,45 @@
+name: Packer Build
+on:
+  workflow_dispatch:
+    inputs:
+      os:
+        description: 'OS (ubuntu, almalinux, rhel, win10, win11, windows-server)'
+        required: true
+      os_version:
+        description: 'OS version'
+        required: true
+
+jobs:
+  prepare:
+    runs-on: self-hosted
+    container: alpine:3.18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/prep-packer
+        id: prep
+        with:
+          os: ${{ github.event.inputs.os }}
+          os_version: ${{ github.event.inputs.os_version }}
+          vsphere_username: ${{ secrets.VSPHERE_USER }}
+          vsphere_password: ${{ secrets.VSPHERE_PASSWORD }}
+          vsphere_insecure_connection: ${{ secrets.VSPHERE_INSECURE_CONNECTION }}
+          vsphere_server: ${{ secrets.VSPHERE_SERVER }}
+          vsphere_datacenter: ${{ secrets.VSPHERE_DATACENTER }}
+          vsphere_cluster: ${{ secrets.VSPHERE_CLUSTER }}
+          vsphere_datastore: ${{ secrets.VSPHERE_DATASTORE }}
+          vsphere_network: ${{ secrets.VSPHERE_NETWORK }}
+          vsphere_folder: ${{ secrets.VSPHERE_FOLDER }}
+          iso_path: ${{ secrets.ISO_PATH }}
+
+    outputs:
+      build_dir: ${{ steps.prep.outputs.build_dir }}
+
+  build:
+    needs: prepare
+    runs-on: self-hosted
+    container: alpine:3.18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/packer-build
+        with:
+          build_dir: ${{ needs.prepare.outputs.build_dir }}

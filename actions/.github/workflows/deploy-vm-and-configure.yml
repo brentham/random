@@ -1,0 +1,45 @@
+name: Deploy VM and Run Ansible
+on:
+  # push:
+  #   branches:
+  #     - main
+  workflow_dispatch:  # Manual trigger
+#   push:
+#     paths:
+#       - 'terraform/**'  # Optional: Auto-trigger on Terraform changes
+
+jobs:
+  terraform:
+    runs-on: self-hosted
+    # container:
+    #     image: hashicorp/terraform
+    steps:
+
+    -  name: checkout
+       uses: actions/checkout@v4
+
+    - name: Copy vars
+      run: |
+          cat > ./terraform/vcenter.tfvars <<EOF
+          vsphere_user = "${{ secrets.VSPHERE_USER }}"
+          vsphere_password = "${{ secrets.VSPHERE_PASSWORD }}"
+          vsphere_server = "${{ secrets.VSPHERE_SERVER }}"
+          EOF
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+          node-version: '20'
+        
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+    #   with:
+    #     terraform_version: 1.5.0
+        
+    - name: Terraform Init
+      run: terraform init
+      working-directory: ./terraform
+
+    - name: Terraform Apply
+      run: terraform apply -auto-approve -var-file vcenter.tfvars -var-file terraform.tfvars 
+      working-directory: ./terraform

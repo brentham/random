@@ -1,0 +1,97 @@
+name: 'Packer Preparation'
+description: 'Prepare Packer build environment'
+inputs:
+  os:
+    description: 'OS (ubuntu, almalinux, rhel, win10, win11, windows-server)'
+    required: true
+  os_version:
+    description: 'OS version'
+    required: true
+  vsphere_username:
+    description: 'vCenter username'
+    required: true
+  vsphere_password:
+    description: 'vCenter password'
+    required: true
+  vsphere_insecure_connection:
+    description: 'Allow insecure connection'
+    required: true
+  vsphere_server:
+    description: 'vCenter server address'
+    required: true
+  vsphere_datacenter:
+    description: 'vCenter datacenter'
+    required: true
+  vsphere_cluster:
+    description: 'vCenter cluster'
+    required: true
+  vsphere_datastore:
+    description: 'vCenter datastore'
+    required: true
+  vsphere_network:
+    description: 'vCenter network'
+    required: true
+  vsphere_folder:
+    description: 'vCenter folder'
+    required: true
+  iso_path:
+    description: 'ISO path'
+    required: true
+outputs:
+  os_type:
+    description: 'Determined OS type (linux/windows)'
+    value: ${{ steps.os_type.outputs.value }}
+  build_dir:
+    description: 'Build directory path'
+    value: ${{ steps.build_dir.outputs.value }}
+runs:
+  using: 'composite'
+  steps:
+    - name: Install Packer
+      shell: sh
+      run: apk add packer
+      id: install
+
+    - name: Determine OS_TYPE
+      shell: sh
+      id: os_type
+      run: |
+        if [[ "${{ inputs.os }}" == "ubuntu" || "${{ inputs.os }}" == "almalinux" || "${{ inputs.os }}" == "rhel" ]]; then
+          echo "value=linux" >> $GITHUB_OUTPUT
+        elif [[ "${{ inputs.os }}" == "win10" || "${{ inputs.os }}" == "win11" || "${{ inputs.os }}" == "windows-server" ]]; then
+          echo "value=windows" >> $GITHUB_OUTPUT
+        else
+          echo "Unsupported OS: ${{ inputs.os }}"
+          exit 1
+        fi
+
+    - name: Create vsphere.pkrvars.hcl
+      shell: sh
+      run: |
+        mkdir -p ${{ steps.os_type.outputs.value }}/${{ inputs.os }}/${{ inputs.os_version }}
+        cat > ${{ steps.os_type.outputs.value }}/${{ inputs.os }}/${{ inputs.os_version }}/vsphere.pkrvars.hcl <<EOF
+        vsphere_username = "${{ inputs.vsphere_username }}"
+        vsphere_password = "${{ inputs.vsphere_password }}"
+        vsphere_insecure_connection = "${{ inputs.vsphere_insecure_connection }}"
+        vsphere_server = "${{ inputs.vsphere_server }}"
+        vsphere_datacenter = "${{ inputs.vsphere_datacenter }}"
+        vsphere_cluster = "${{ inputs.vsphere_cluster }}"
+        vsphere_datastore = "${{ inputs.vsphere_datastore }}"
+        vsphere_network = "${{ inputs.vsphere_network }}"
+        vsphere_folder = "${{ inputs.vsphere_folder }}"
+        iso_path = "${{ inputs.iso_path }}"
+        EOF
+        echo "Created vsphere.pkrvars.hcl with contents:"
+        cat ${{ steps.os_type.outputs.value }}/${{ inputs.os }}/${{ inputs.os_version }}/vsphere.pkrvars.hcl
+
+    - name: Upload vsphere.pkrvars.hcl
+      uses: actions/upload-artifact@v4
+      with:
+        name: vsphere-pkrvars
+        path: ${{ steps.os_type.outputs.value }}/${{ inputs.os }}/${{ inputs.os_version }}/vsphere.pkrvars.hcl
+
+    - name: Set build directory
+      id: build_dir
+      shell: sh
+      run: |
+        echo "value=${{ steps.os_type.outputs.value }}/${{ inputs.os }}/${{ inputs.os_version }}" >> $GITHUB_OUTPUT

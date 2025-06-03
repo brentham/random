@@ -1,0 +1,11 @@
+vsphere.pkrvars.hcl
+packer_cache
+variables-secrets.json
+vcenter.tfvars
+.terraform*
+
+
+vsphere.pkrvars.hcl
+packer_cache
+variables-secrets.json
+VMware-tools.iso

@@ -2,6 +2,8 @@
 - name: Join Ubuntu server to AD domain
   hosts: all
   become: yes
+  vars_files:
+    - secrets.yml 
   vars:
     domain: GHDNA.IO
     domain_lower: ghdna.io
@@ -53,22 +55,14 @@
         backup: yes
 
     # Step 3: Join VM to AD
-    - name: Authenticate to AD with kinit
-      command: "kinit -V {{ ad_user }}@{{ domain }}"
-      no_log: true  # Don't log credentials
-      register: kinit_result
-      changed_when: "'validating' in kinit_result.stderr"
-      failed_when: 
-        - "'validating' not in kinit_result.stderr"
-        - "'Password incorrect' not in kinit_result.stderr"
-      retries: 3
-      delay: 5
-      when: ad_user is defined
+    - name: Join AD domain
+      command: |
+        echo "{{ ad_join_password }}" | realm join --verbose {{ domain }} \
+        -U "{{ ad_join_user }}@{{ domain }}" --install=/
+      no_log: true  # Critical for security
+      args:
+        stdin: "{{ ad_join_password }}"
 
-    - name: Join the domain
-      command: "realm join --verbose {{ domain }} -U '{{ ad_user }}@{{ domain }}' --install=/"
-      no_log: true  # Don't log credentials
-      when: ad_user is defined
 
     # Step 4: Setup SSSD Service
     - name: Configure SSSD

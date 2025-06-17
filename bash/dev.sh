@@ -1,10 +1,10 @@
 #!/bin/bash
 
 # Configuration
-SLIDES_SRC="/mnt/tank/LIMSDSR/Images/Slides"
-SLIDES_ARCHIVE="/mnt/tank/LIMSDSR/Images/Archive"
-CONTROLS_SRC="/mnt/tank/LIMSDSR/Images/Slides/Controls"
-CONTROLS_ARCHIVE="/mnt/tank/LIMSDSR/Images/Archive/Controls"
+SLIDES_SRC="./Images/Slides"
+SLIDES_ARCHIVE="./Images/Archive"
+CONTROLS_SRC="./Images/Slides/Controls"
+CONTROLS_ARCHIVE="./Images/Archive/Controls"
 DURATION=400
 
 # Logging setup

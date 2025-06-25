@@ -13,6 +13,14 @@ from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
 from pathlib import Path
 
+# Load environment variables from .env file if available
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    # python-dotenv not installed, continue without it
+    pass
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -153,9 +161,6 @@ def test_teams_notification():
         return False
 
 # ============================================================================
-# [The rest of the script remains unchanged - get_restore_status, init_restore, 
-#  download_file, copy_to_network_share, generate_report, and main functions]
-# ============================================================================
 
 def get_restore_status(head_response):
     """Check restore status from head_object response."""
@@ -273,7 +278,22 @@ def main():
     parser.add_argument('--test-email', action='store_true', help='Test email notification system')
     parser.add_argument('--test-teams', action='store_true', help='Test Teams notification system')
     
+    # Add .env argument
+    parser.add_argument('--env-file', help='Path to .env file for configuration', default='.env')
+    
     args = parser.parse_args()
+    
+    # Load .env file if specified
+    if args.env_file:
+        try:
+            from dotenv import load_dotenv
+            if os.path.exists(args.env_file):
+                load_dotenv(args.env_file)
+                logger.info(f"Loaded environment variables from {args.env_file}")
+            else:
+                logger.warning(f"Env file not found: {args.env_file}")
+        except ImportError:
+            logger.warning("python-dotenv not installed, skipping .env loading")
     
     # Run tests if requested
     if args.test_email:

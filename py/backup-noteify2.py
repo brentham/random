@@ -70,16 +70,44 @@ def send_teams_notification(title, message, theme_color="0078D7"):
         return False
     
     try:
+        # Create the adaptive card payload
         payload = {
-            "@type": "MessageCard",
-            "@context": "http://schema.org/extensions",
-            "themeColor": theme_color,
-            "summary": title,
-            "sections": [{
-                "activityTitle": title,
-                "activitySubtitle": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                "text": message,
-            }]
+            "type": "message",
+            "attachments": [
+                {
+                    "contentType": "application/vnd.microsoft.card.adaptive",
+                    "content": {
+                        "type": "AdaptiveCard",
+                        "body": [
+                            {
+                                "type": "TextBlock",
+                                "size": "Medium",
+                                "weight": "Bolder",
+                                "text": title
+                            },
+                            {
+                                "type": "TextBlock",
+                                "text": message,
+                                "wrap": True
+                            },
+                            {
+                                "type": "FactSet",
+                                "facts": [
+                                    {
+                                        "title": "Time:",
+                                        "value": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                                    }
+                                ]
+                            }
+                        ],
+                        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                        "version": "1.0",
+                        "msteams": {
+                            "width": "Full"
+                        }
+                    }
+                }
+            ]
         }
         
         response = requests.post(

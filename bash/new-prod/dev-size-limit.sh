@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 # Configuration
 SLIDES_SRC="./Images/Slides"
@@ -24,9 +24,10 @@ log_action() {
   echo "[$(date +\%Y-\%m-\%d_\%H:\%M:\%S)] $1" >> "$LOG_FILE"
 }
 
-# Get size of folder in bytes
+# Get size of folder in bytes (FreeBSD compatible)
 get_folder_size() {
-  du -sb "$1" | cut -f1
+  # Use -d0 to get total for the directory itself
+  du -d0 -k "$1" | awk '{print $1 * 1024}'  # Convert from KB to bytes
 }
 
 # Move folder without nesting
@@ -42,7 +43,7 @@ move_folder() {
     return
   fi
 
-  # Get folder size
+  # Get folder size (FreeBSD compatible)
   size=$(get_folder_size "$src")
   
   # Check if moving would exceed limit
@@ -53,7 +54,7 @@ move_folder() {
   fi
 
   # If destination exists, move contents instead of folder
-  if [[ -d "$dest_path" ]]; then
+  if [ -d "$dest_path" ]; then
     log_action "MERGING: Moving contents of $folder_name to existing folder"
     find "$src" -mindepth 1 -maxdepth 1 -exec mv -v "{}" "$dest_path" \; >> "$LOG_FILE" 2>&1
     # Remove the now empty source folder
@@ -82,8 +83,8 @@ move_file() {
     return
   fi
 
-  # Get file size
-  size=$(stat -c%s "$src")
+  # Get file size (FreeBSD compatible)
+  size=$(stat -f %z "$src")
   
   # Check if moving would exceed limit
   if [ $((total_moved + size)) -gt $MAX_SIZE ]; then
@@ -93,10 +94,18 @@ move_file() {
   fi
 
   # Handle existing files
-  if [[ -e "$dest_path" ]]; then
+  if [ -e "$dest_path" ]; then
     # Generate new name with timestamp
     local timestamp=$(date +%Y%m%d%H%M%S)
-    local new_name="${file_name%.*}-${timestamp}.${file_name##*.}"
+    local base="${file_name%.*}"
+    local ext="${file_name##*.}"
+    # If there's no extension, avoid a trailing dot
+    if [ "$base" = "$file_name" ]; then
+      ext=""
+    else
+      ext=".$ext"
+    fi
+    local new_name="${base}-${timestamp}${ext}"
     dest_path="$dest_dir/$new_name"
     log_action "RENAMED FILE: $file_name → $new_name (conflict resolved)"
   fi
@@ -112,7 +121,7 @@ move_file() {
 
 # --- Main Execution ---
 log_action "Starting archive job (Max: 500 GB)"
-# log_action "Current disk usage: $(df -h /mnt/tank | awk 'NR==2 {print $3 " used, " $4 " free"}')"
+log_action "Current disk usage: $(df -h /mnt/tank | awk 'NR==2 {print $3 " used, " $4 " free"}')"
 
 # Move Slides folders
 find "$SLIDES_SRC" -mindepth 1 -maxdepth 1 -type d -mtime +$DURATION | while read -r folder; do
@@ -146,4 +155,4 @@ else
   log_action "Archive job FULLY completed"
 fi
 log_action "Total data moved: $((total_moved/1024/1024/1024)) GB"
-# log_action "Current disk usage: $(df -h /mnt/tank | awk 'NR==2 {print $3 " used, " $4 " free"}')"
+log_action "Current disk usage: $(df -h /mnt/tank | awk 'NR==2 {print $3 " used, " $4 " free"}')"

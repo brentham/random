@@ -7,7 +7,7 @@ CONTROLS_SRC="./Images/Slides/Controls"
 CONTROLS_ARCHIVE="./Images/Archive/Controls"
 MARKUP_SRC="./Images/Slides/Markup"
 MARKUP_ARCHIVE="./Images/Archive/Markup"
-DURATION=400
+DURATION=90
 
 # Logging setup
 LOG_DIR="/mnt/tank/scripts/logs/slides-logs"

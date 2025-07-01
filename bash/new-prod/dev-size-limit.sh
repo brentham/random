@@ -112,7 +112,7 @@ move_file() {
 
 # --- Main Execution ---
 log_action "Starting archive job (Max: 500 GB)"
-log_action "Current disk usage: $(df -h /mnt/tank | awk 'NR==2 {print $3 " used, " $4 " free"}')"
+# log_action "Current disk usage: $(df -h /mnt/tank | awk 'NR==2 {print $3 " used, " $4 " free"}')"
 
 # Move Slides folders
 find "$SLIDES_SRC" -mindepth 1 -maxdepth 1 -type d -mtime +$DURATION | while read -r folder; do
@@ -146,4 +146,4 @@ else
   log_action "Archive job FULLY completed"
 fi
 log_action "Total data moved: $((total_moved/1024/1024/1024)) GB"
-log_action "Current disk usage: $(df -h /mnt/tank | awk 'NR==2 {print $3 " used, " $4 " free"}')"
+# log_action "Current disk usage: $(df -h /mnt/tank | awk 'NR==2 {print $3 " used, " $4 " free"}')"

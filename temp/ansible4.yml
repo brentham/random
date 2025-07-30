@@ -1,0 +1,174 @@
+---
+- name: Join Ubuntu server to AD domain with verification
+  hosts: all
+  become: yes
+  vars_files:
+    - secrets.yml  # Vault-encrypted file containing ad_join_password
+
+  vars:
+    domain: GHDNA.IO
+    domain_lower: ghdna.io
+    ad_servers: "ad-sql-01.ghdna.io,ad-sql-02.ghdna.io"
+    ad_backup_servers: "ad-rwc-01.ghdna.io"
+    ad_site: "gh-amer-west"
+    ad_join_user: "admin_username"  # Replace with your AD join user
+    ad_users_group: "linux_users"   # Replace with your AD users group
+    ad_admins_group: "linux_admins" # Replace with your AD admins group
+    test_user: "testuser"           # AD user for verification
+
+  tasks:
+    # Step 1: Install Pre-Reqs
+    - name: Update apt repositories
+      apt:
+        update_cache: yes
+
+    - name: Install required packages
+      apt:
+        name:
+          - sssd
+          - krb5-config
+          - krb5-user
+          - realmd
+          - adcli
+        state: present
+
+    # Step 2: Setup Kerberos
+    - name: Configure krb5.conf
+      block:
+        - name: Update default_realm
+          replace:
+            path: /etc/krb5.conf
+            regexp: '^\s*default_realm\s*=\s*.*'
+            replace: '  default_realm = {{ domain }}'
+            backup: yes
+
+        - name: Ensure realm configuration exists
+          blockinfile:
+            path: /etc/krb5.conf
+            marker: "# {mark} ANSIBLE MANAGED BLOCK - Realm Config"
+            block: |
+              [realms]
+                {{ domain }} = {
+                  kdc = {{ domain_lower }}
+                  admin_server = {{ domain_lower }}
+                }
+
+              [domain_realm]
+                .{{ domain_lower }} = {{ domain }}
+                {{ domain_lower }} = {{ domain }}
+
+    # Step 3: Join VM to AD
+    - name: Authenticate to AD with kinit
+      command: "kinit -V {{ ad_join_user }}@{{ domain }}"
+      no_log: true
+      args:
+        stdin: "{{ ad_join_password }}"
+      register: kinit_result
+      changed_when: "'validating' in kinit_result.stderr"
+      failed_when: 
+        - "'validating' not in kinit_result.stderr"
+        - "'Password incorrect' not in kinit_result.stderr"
+      retries: 3
+      delay: 5
+
+    - name: Join AD domain
+      command: "realm join --verbose {{ domain }} -U '{{ ad_join_user }}@{{ domain }}' --install=/"
+      no_log: true
+
+    # Step 4: Setup SSSD
+    - name: Configure SSSD
+      template:
+        src: sssd.conf.j2
+        dest: /etc/sssd/sssd.conf
+        owner: root
+        group: root
+        mode: 0600
+
+    - name: Restart SSSD service
+      service:
+        name: sssd
+        state: restarted
+
+    # Step 5: Configure SSH
+    - name: Enable PasswordAuthentication in SSH
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        line: "PasswordAuthentication yes"
+        state: present
+        validate: '/usr/sbin/sshd -t -f %s'
+
+    - name: Restart SSH service
+      service:
+        name: sshd
+        state: restarted
+
+    # Step 6: Configure PAM
+    - name: Configure PAM homedir creation
+      lineinfile:
+        path: /etc/pam.d/common-session
+        line: "session required pam_mkhomedir.so skel=/etc/skel/ umask=0077"
+        insertafter: 'session optional pam_sss.so'
+        state: present
+
+    # Step 7: Configure Sudoers
+    - name: Grant Domain Admins sudo access
+      lineinfile:
+        path: /etc/sudoers
+        line: '%Domain\ Admins ALL=(ALL) NOPASSWD:ALL'
+        validate: 'visudo -cf %s'
+
+    - name: Grant custom admin group sudo access
+      lineinfile:
+        path: /etc/sudoers
+        line: '%{{ ad_admins_group }} ALL=(ALL) NOPASSWD:ALL'
+        validate: 'visudo -cf %s'
+
+    # --- Verification Steps ---
+    - name: Check realm status
+      command: realm list
+      register: realm_status
+      changed_when: false
+      failed_when: 
+        - "'{{ domain_lower }}' not in realm_status.stdout"
+        - "'configured' not in realm_status.stdout"
+      tags: verify
+
+    - name: Verify AD user lookup
+      command: id "{{ test_user }}@{{ domain_lower }}"
+      register: ad_user_lookup
+      changed_when: false
+      failed_when: ad_user_lookup.rc != 0
+      tags: verify
+
+    - name: Check home directory creation
+      command: su - "{{ test_user }}@{{ domain_lower }}" -c "echo 'Home dir test'"
+      args:
+        executable: /bin/bash
+      register: homedir_test
+      changed_when: false
+      failed_when: 
+        - homedir_test.rc != 0
+        - "'/home/{{ test_user }}' not in homedir_test.stdout"
+      tags: verify
+
+    - name: Test sudo access for Domain Admins
+      command: sudo -U "Domain Admins" -l
+      register: sudo_test
+      changed_when: false
+      failed_when: "'NOPASSWD: ALL' not in sudo_test.stdout"
+      tags: verify
+
+    - name: Final verification report
+      debug:
+        msg: |
+          AD join successful!
+          Domain: {{ domain }}
+          Test user: {{ test_user }}
+          Home directory: /home/{{ test_user }}
+          Sudo access verified for Domain Admins
+      when: 
+        - realm_status is succeeded
+        - ad_user_lookup is succeeded
+        - homedir_test is succeeded
+        - sudo_test is succeeded
+      tags: verify

@@ -1,0 +1,296 @@
+---
+- name: Join Ubuntu server to AD domain with debugging
+  hosts: all
+  become: yes
+  vars_files:
+    - secrets.yml  # Vault-encrypted file containing ad_join_password
+
+  vars:
+    domain: GHDNA.IO
+    domain_lower: ghdna.io
+    ad_servers: "ad-sql-01.ghdna.io,ad-sql-02.ghdna.io"
+    ad_backup_servers: "ad-rwc-01.ghdna.io"
+    ad_site: "gh-amer-west"
+    ad_join_user: "admin_username"  # Replace with your AD join user
+    ad_users_group: "linux_users"   # Replace with your AD users group
+    ad_admins_group: "linux_admins" # Replace with your AD admins group
+    test_user: "testuser"           # AD user for verification
+
+  tasks:
+    # Step 1: Install Pre-Reqs
+    - name: Update apt repositories
+      apt:
+        update_cache: yes
+      register: apt_update
+      changed_when: "'0 upgraded' not in apt_update.stdout"
+
+    - name: Install required packages
+      apt:
+        name:
+          - sssd
+          - krb5-config
+          - krb5-user
+          - realmd
+          - adcli
+        state: present
+      register: package_install
+
+    # Debug: Show package installation results
+    - name: Show package installation status
+      debug:
+        var: package_install.results
+      when: package_install is changed
+
+    # Step 2: Setup Kerberos
+    - name: Configure krb5.conf
+      block:
+        - name: Backup original krb5.conf
+          copy:
+            src: /etc/krb5.conf
+            dest: /etc/krb5.conf.bak
+            remote_src: yes
+
+        - name: Update default_realm
+          replace:
+            path: /etc/krb5.conf
+            regexp: '^\s*default_realm\s*=\s*.*'
+            replace: '  default_realm = {{ domain }}'
+            backup: no
+          register: krb_replace
+
+        - name: Ensure realm configuration exists
+          blockinfile:
+            path: /etc/krb5.conf
+            marker: "# {mark} ANSIBLE MANAGED BLOCK - Realm Config"
+            block: |
+              [realms]
+                {{ domain }} = {
+                  kdc = {{ domain_lower }}
+                  admin_server = {{ domain_lower }}
+                }
+
+              [domain_realm]
+                .{{ domain_lower }} = {{ domain }}
+                {{ domain_lower }} = {{ domain }}
+          register: krb_blockinfile
+
+    # Debug: Show Kerberos config changes
+    - name: Show Kerberos config updates
+      debug:
+        msg:
+          - "Replaced default_realm: {{ krb_replace.changed }}"
+          - "Added realm block: {{ krb_blockinfile.changed }}"
+          - "Current krb5.conf content:"
+          - "{{ lookup('file', '/etc/krb5.conf') }}"
+
+    # Step 3: Join VM to AD
+    - name: Join AD domain
+      command: |
+        echo "{{ ad_join_password }}" | realm join --verbose {{ domain }} \
+        -U "{{ ad_join_user }}@{{ domain }}" --install=/
+      no_log: true
+      args:
+        stdin: "{{ ad_join_password }}"
+      register: domain_join_result
+      ignore_errors: yes
+
+    # Debug: Show domain join results
+    - name: Show domain join status
+      debug:
+        var: domain_join_result
+      when: domain_join_result is defined
+
+    # Step 4: Setup SSSD
+    - name: Configure SSSD
+      template:
+        src: sssd.conf.j2
+        dest: /etc/sssd/sssd.conf
+        owner: root
+        group: root
+        mode: 0600
+      register: sssd_config
+
+    # Debug: Show SSSD config content
+    - name: Show SSSD configuration
+      debug:
+        msg: "SSSD config content:\n{{ lookup('file', '/etc/sssd/sssd.conf') }}"
+      when: sssd_config.changed
+
+    - name: Restart SSSD service
+      service:
+        name: sssd
+        state: restarted
+      register: sssd_restart
+
+    # Step 5: Configure SSH
+    - name: Enable PasswordAuthentication in SSH
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        line: "PasswordAuthentication yes"
+        state: present
+        validate: '/usr/sbin/sshd -t -f %s'
+      register: sshd_config
+
+    - name: Restart SSH service
+      service:
+        name: sshd
+        state: restarted
+      register: sshd_restart
+
+    # Step 6: Configure PAM
+    - name: Configure PAM homedir creation
+      lineinfile:
+        path: /etc/pam.d/common-session
+        line: "session required pam_mkhomedir.so skel=/etc/skel/ umask=0077"
+        insertafter: 'session optional pam_sss.so'
+        state: present
+      register: pam_config
+
+    # Debug: Show PAM config
+    - name: Show common-session config
+      debug:
+        msg: "PAM common-session content:\n{{ lookup('file', '/etc/pam.d/common-session') }}"
+      when: pam_config.changed
+
+    # Step 7: Configure Sudoers
+    - name: Grant Domain Admins sudo access
+      lineinfile:
+        path: /etc/sudoers
+        line: '%Domain\ Admins ALL=(ALL) NOPASSWD:ALL'
+        validate: 'visudo -cf %s'
+      register: sudoers_domain_admins
+
+    - name: Grant custom admin group sudo access
+      lineinfile:
+        path: /etc/sudoers
+        line: '%{{ ad_admins_group }} ALL=(ALL) NOPASSWD:ALL'
+        validate: 'visudo -cf %s'
+      register: sudoers_custom_admins
+
+    # Debug: Show sudoers changes
+    - name: Show sudoers updates
+      debug:
+        msg:
+          - "Domain Admins added: {{ sudoers_domain_admins.changed }}"
+          - "Custom admins added: {{ sudoers_custom_admins.changed }}"
+          - "Current sudoers content (last 10 lines):"
+          - "{{ lookup('pipe', 'tail -10 /etc/sudoers') }}"
+
+    # --- Comprehensive Debugging & Verification ---
+    - name: Collect realm status
+      command: realm list
+      register: realm_status
+      changed_when: false
+
+    - name: Check SSSD status
+      command: systemctl status sssd
+      register: sssd_status
+      ignore_errors: yes
+      changed_when: false
+
+    - name: Check Kerberos tickets
+      command: klist
+      register: klist_output
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Check user resolution
+      command: getent passwd "{{ test_user }}@{{ domain_lower }}"
+      register: user_resolution
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Check home directory status
+      stat:
+        path: "/home/{{ test_user }}"
+      register: home_dir_stat
+
+    - name: Check SSSD logs
+      command: journalctl -u sssd --no-pager -n 50
+      register: sssd_logs
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Check domain join status
+      command: realm discover {{ domain }}
+      register: realm_discover
+      changed_when: false
+
+    # --- Debug Outputs ---
+    - name: Show debug information
+      debug:
+        msg: |
+          ==== AD JOIN DEBUG INFO ====
+          Realm Status:
+          {{ realm_status.stdout }}
+
+          SSSD Service Status:
+          {{ sssd_status.stdout }}
+
+          Kerberos Tickets:
+          {{ klist_output.stdout }}
+
+          User Resolution ({{ test_user }}):
+          {{ user_resolution.stdout }}
+
+          Home Directory Status:
+          - Exists: {{ home_dir_stat.stat.exists }}
+          - Path: {{ home_dir_stat.stat.path }}
+
+          Realm Discover:
+          {{ realm_discover.stdout }}
+
+          SSSD Logs (last 50 lines):
+          {{ sssd_logs.stdout }}
+
+          ==== CONFIGURATION CHECKS ====
+          Kerberos Config (krb5.conf):
+          {{ lookup('file', '/etc/krb5.conf') }}
+
+          SSSD Config:
+          {{ lookup('file', '/etc/sssd/sssd.conf') }}
+
+          PAM Common-Session:
+          {{ lookup('file', '/etc/pam.d/common-session') }}
+
+          SSH Config (PasswordAuthentication line):
+          {{ lookup('pipe', 'grep PasswordAuthentication /etc/ssh/sshd_config') }}
+
+          Sudoers Entries:
+          {{ lookup('pipe', 'grep -E "Domain\\\\ Admins|{{ ad_admins_group }}" /etc/sudoers') }}
+
+    # --- Verification Checks ---
+    - name: Verify domain join
+      fail:
+        msg: |
+          Domain join failed!
+          Realm status: {{ realm_status.stdout | default('empty') }}
+          Realm discover: {{ realm_discover.stdout | default('empty') }}
+          SSSD logs: {{ sssd_logs.stdout | default('empty') }}
+      when: 
+        - domain not in realm_status.stdout
+        - "'configured' not in realm_status.stdout"
+
+    - name: Verify user resolution
+      fail:
+        msg: |
+          User resolution failed for {{ test_user }}!
+          getent output: {{ user_resolution.stdout | default('empty') }}
+          SSSD logs: {{ sssd_logs.stdout | default('empty') }}
+      when: user_resolution.rc != 0
+
+    - name: Verify home directory
+      fail:
+        msg: |
+          Home directory not created for {{ test_user }}!
+          Path: /home/{{ test_user }}
+          Exists: {{ home_dir_stat.stat.exists | default(false) }}
+      when: not home_dir_stat.stat.exists
+
+    - name: Final success message
+      debug:
+        msg: |
+          SUCCESS! Domain join completed successfully.
+          Test user: {{ test_user }}@{{ domain_lower }}
+          Home directory: /home/{{ test_user }} (exists: {{ home_dir_stat.stat.exists }})
+          Next steps: Try logging in with an AD account

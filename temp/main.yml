@@ -1,0 +1,107 @@
+---
+- name: Join Ubuntu server to AD domain with verification
+  hosts: all
+  become: yes
+  vars_files:
+    - group_vars/all.yml
+
+  tasks:
+    # Step 1: Install Pre-Reqs
+    - name: Update apt repositories
+      apt:
+        update_cache: yes
+
+    - name: Install required packages
+      apt:
+        name:
+          - sssd
+          - krb5-config
+          - krb5-user
+          - realmd
+          - adcli
+          - oddjob
+          - oddjob-mkhomedir
+        state: present
+
+    # Step 2: Setup Kerberos
+    - name: Configure krb5.conf
+      block:
+        - name: Update default_realm
+          replace:
+            path: /etc/krb5.conf
+            regexp: '^\s*default_realm\s*=\s*.*'
+            replace: '  default_realm = {{ domain }}'
+            backup: yes
+
+        - name: Ensure realm configuration exists
+          blockinfile:
+            path: /etc/krb5.conf
+            marker: "# {mark} ANSIBLE MANAGED BLOCK - Realm Config"
+            block: |
+              [realms]
+                {{ domain }} = {
+                  kdc = {{ domain_lower }}
+                  admin_server = {{ domain_lower }}
+                }
+
+              [domain_realm]
+                .{{ domain_lower }} = {{ domain }}
+                {{ domain_lower }} = {{ domain }}
+
+    # Step 3: Join VM to AD
+    - name: Authenticate to AD with kinit
+      ansible.builtin.shell: |
+        echo "{{ ad_password }}" | kinit {{ ad_user }}@{{ domain | upper }}
+      register: kinit_output
+      changed_when: false
+
+    - name: Join the domain
+      ansible.builtin.shell: |
+        echo "{{ ad_password }}" | realm join -U {{ ad_user }} {{ domain }}
+      register: realm_join_output
+
+    - name: Debug join output
+      ansible.builtin.debug:
+        var: realm_join_output.stdout
+
+    # Step 4: Setup SSSD
+    - name: Configure SSSD
+      template:
+        src: sssd.conf.j2
+        dest: /etc/sssd/sssd.conf
+        owner: root
+        group: root
+        mode: 0600
+
+    - name: Restart SSSD service
+      service:
+        name: sssd
+        state: restarted
+
+    # Step 5: Configure SSH
+    - name: Enable PasswordAuthentication in SSH
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        line: "PasswordAuthentication yes"
+        state: present
+        validate: '/usr/sbin/sshd -t -f %s'
+
+    - name: Restart SSH service
+      service:
+        name: sshd
+        state: restarted
+
+    # Step 6: Configure PAM
+    - name: Configure PAM homedir creation
+      lineinfile:
+        path: /etc/pam.d/common-session
+        line: "session required pam_mkhomedir.so skel=/etc/skel/ umask=0077"
+        insertafter: 'session optional pam_sss.so'
+        state: present
+
+    # Step 7: Configure Sudoers
+    - name: Grant Domain Admins sudo access
+      lineinfile:
+        path: /etc/sudoers
+        line: '%Domain\ Admins ALL=(ALL) NOPASSWD:ALL'
+        validate: 'visudo -cf %s'

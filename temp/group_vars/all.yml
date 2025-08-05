@@ -1,0 +1,11 @@
+domain: TEST.IO
+domain_lower: test.io
+ad_servers: "ad-sql-01.test.io,ad-sql-02.test.io"
+ad_backup_servers: "ad-rwc-01.test.io"
+ad_site: "test-amer-west"
+ad_join_user: ""
+ad_user: ""
+ad_users_group: "linux_users"
+ad_admins_group: "linux_admins"
+test_user: ""
+ad_password: ""

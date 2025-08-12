@@ -67,25 +67,25 @@ volumes:
     driver_opts:
       type: "nfs"
       o: addr=ip,rw,noatime,rsize=8192,wsize=8192,tcp,timeo=14,nfsvers=4
-      device: :/mnt/datastore/path/docker-data/minio/data/data1-1
+      device: :/mnt/nfs-path/docker-data/minio/data/data1-1
   minio-data1-2:
     name: minio-data1-2
     driver_opts:
       type: "nfs"
       o: addr=ip,rw,noatime,rsize=8192,wsize=8192,tcp,timeo=14,nfsvers=4
-      device: :/mnt/datastore/path/docker-data/minio/data/data1-2
+      device: :/mnt/nfs-path/docker-data/minio/data/data1-2
   minio-data2-1:
     name: minio-data2-1
     driver_opts:
       type: "nfs"
       o: addr=ip,rw,noatime,rsize=8192,wsize=8192,tcp,timeo=14,nfsvers=4
-      device: :/mnt/datastore/path/docker-data/minio/data/data2-1
+      device: :/mnt/nfs-path/docker-data/minio/data/data2-1
   minio-data2-2:
     name: minio-data2-2
     driver_opts:
       type: "nfs"
       o: addr=ip,rw,noatime,rsize=8192,wsize=8192,tcp,timeo=14,nfsvers=4
-      device: :/mnt/datastore/path/docker-data/minio/data/data2-2
+      device: :/mnt/nfs-path/docker-data/minio/data/data2-2
   nginx:
     name: nginx
     driver_opts:

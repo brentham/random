@@ -1,0 +1,10 @@
+---
+
+services:
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: phpmyadmin
+    env_file: stack.env
+    ports:
+      - 8888:80
+    restart: unless-stopped

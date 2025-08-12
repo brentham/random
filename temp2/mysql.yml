@@ -1,0 +1,59 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    env_file: stack.env
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - mysql_backup:/backups
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p$MYSQL_ROOT_PASSWORD"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+  mysql_backup:
+    image: mysql:8.0
+    container_name: mysql_backup
+    env_file: stack.env
+    volumes:
+      - mysql_backup:/backups
+    entrypoint: |
+      /bin/bash -c "
+      while true; do
+        mysqldump -h mysql -uroot -p$MYSQL_ROOT_PASSWORD --all-databases > /backups/backup_$(date +%Y%m%d%H%M%S).sql
+        sleep 86400; # Schedule a backup every 24 hours
+      done
+      "
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: phpmyadmin
+    env_file: stack.env
+    environment:
+    - PMA_ARBITRARY=1
+    - PMA_HOST=mysql
+    ports:
+      - 8888:80
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+    name: mysql_data
+    driver_opts:
+      type: "nfs"
+      o: addr=ip,rw,noatime,rsize=8192,wsize=8192,tcp,timeo=14,nfsvers=4
+      device: :/mnt/nfs-path/docker-data/mysql/data
+  mysql_backup:
+    name: mysql_backup
+    driver_opts:
+      type: "nfs"
+      o: addr=ip,rw,noatime,rsize=8192,wsize=8192,tcp,timeo=14,nfsvers=4
+      device: :/mnt/nfs-path/docker-data/mysql/backups

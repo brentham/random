@@ -28,4 +28,4 @@ volumes:
     driver_opts:
       type: "nfs"
       o: addr=ip,rw,noatime,rsize=8192,wsize=8192,tcp,timeo=14,nfsvers=4
-      device: :/mnt/datastore/path/gitea/data
+      device: :/mnt/nfs-path/gitea/data

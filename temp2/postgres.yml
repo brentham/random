@@ -1,0 +1,50 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: postgres_db
+    env_file: stack.env
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - postgres_backup:/backups
+    command: postgres -c 'max_connections=1000'
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+  postgres_backup:
+    image: postgres:15
+    container_name: postgres_backup
+    env_file: stack.env
+    volumes:
+      - postgres_backup:/backups
+    entrypoint: |
+      /bin/bash -c "
+      export PGPASSWORD=$POSTGRES_PASSWORD;
+      while true; do
+        pg_dumpall -h postgres -U $POSTGRES_USER > /backups/backup_$(date +%Y%m%d%H%M%S).sql
+        sleep 86400; # Schedule a backup every 24 hours
+      done
+      "
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    name: postgres_data
+    driver_opts:
+      type: "nfs"
+      o: addr=ip,rw,noatime,rsize=8192,wsize=8192,tcp,timeo=14,nfsvers=4
+      device: :/mnt/nfs-path/docker-data/postgres/data
+  postgres_backup:
+    name: postgres_backup
+    driver_opts:
+      type: "nfs"
+      o: addr=ip,rw,noatime,rsize=8192,wsize=8192,tcp,timeo=14,nfsvers=4
+      device: :/mnt/nfs-path/docker-data/postgres/backups

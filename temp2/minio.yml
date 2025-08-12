@@ -1,0 +1,99 @@
+# Settings and configurations that are common for all containers
+x-minio-common: &minio-common
+  image: quay.io/minio/minio:RELEASE.2025-07-23T15-54-02Z
+  command: server --console-address ":9001" http://minio{1...2}/data{1...2}
+  expose:
+    - "9000"
+    - "9001"
+  healthcheck:
+    test: ["CMD", "mc", "ready", "local"]
+    interval: 5s
+    timeout: 5s
+    retries: 5
+  restart: unless-stopped
+
+# starts 4 docker containers running minio server instances.
+# using nginx reverse proxy, load balancing, you can access
+# it through port 9000.
+services:
+  minio1:
+    <<: *minio-common
+    container_name: minio1
+    hostname: minio1
+    env_file: stack.env
+    volumes:
+      - minio-data1-1:/data1
+      - minio-data1-2:/data2
+    networks:
+      - proxy
+
+  minio2:
+    <<: *minio-common
+    container_name: minio2
+    hostname: minio2
+    env_file: stack.env
+    volumes:
+      - minio-data2-1:/data1
+      - minio-data2-2:/data2
+    networks:
+      - proxy
+
+  minio-nginx:
+    container_name: minio-nginx
+    image: nginx:1.19.2-alpine
+    hostname: nginx
+    env_file: stack.env
+    command: sh -c "cp /nginx/nginx.conf /etc/nginx/nginx.conf && nginx -g 'daemon off;'"
+    volumes:
+      - nginx:/nginx
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.minio.entrypoints=https"
+      - "traefik.http.routers.minio.rule=Host(`minio.lan.dns.io`)"
+      - "traefik.http.routers.minio.tls=true"
+      - "traefik.http.services.minio.loadbalancer.server.port=9001"
+    depends_on:
+      - minio1
+      - minio2
+    networks:
+      - proxy
+
+volumes:
+  minio-data1-1:
+    name: minio-data1-1
+    driver_opts:
+      type: "nfs"
+      o: addr=ip,rw,noatime,rsize=8192,wsize=8192,tcp,timeo=14,nfsvers=4
+      device: :/mnt/datastore/path/docker-data/minio/data/data1-1
+  minio-data1-2:
+    name: minio-data1-2
+    driver_opts:
+      type: "nfs"
+      o: addr=ip,rw,noatime,rsize=8192,wsize=8192,tcp,timeo=14,nfsvers=4
+      device: :/mnt/datastore/path/docker-data/minio/data/data1-2
+  minio-data2-1:
+    name: minio-data2-1
+    driver_opts:
+      type: "nfs"
+      o: addr=ip,rw,noatime,rsize=8192,wsize=8192,tcp,timeo=14,nfsvers=4
+      device: :/mnt/datastore/path/docker-data/minio/data/data2-1
+  minio-data2-2:
+    name: minio-data2-2
+    driver_opts:
+      type: "nfs"
+      o: addr=ip,rw,noatime,rsize=8192,wsize=8192,tcp,timeo=14,nfsvers=4
+      device: :/mnt/datastore/path/docker-data/minio/data/data2-2
+  nginx:
+    name: nginx
+    driver_opts:
+      type: "nfs"
+      o: addr=ip,rw,noatime,rsize=8192,wsize=8192,tcp,timeo=14,nfsvers=4
+      device: :/mnt/datastore/ip/docker-data/minio/nginx
+
+networks:
+  proxy:
+    name: proxy
+    external: true
